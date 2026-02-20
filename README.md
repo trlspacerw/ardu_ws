@@ -230,6 +230,92 @@ ros2 topic list
 ros2 run rqt_image_view rqt_image_view /front_camera/image
 ```
 
+## ByteTrack + YOLO11m Target Tracker
+
+An interactive object tracker that uses **YOLO11m** for detection and **ByteTrack** for multi-object tracking on the drone's front camera feed. The node automatically arms the drone, takes off to hover altitude, then opens an OpenCV window showing live detections.
+
+### Python Dependencies
+
+```bash
+pip3 install ultralytics pymavlink opencv-python-headless
+```
+
+The YOLO11m model weights (`yolo11m.pt`, ~39 MB) are downloaded automatically on first run.
+
+### Running the Tracker
+
+1. **Launch the simulation** (if not already running):
+
+```bash
+cd ~/ardu_ws
+source install/setup.bash
+ros2 launch ardupilot_gz_bringup iris_tracking.launch.py rviz:=false
+```
+
+2. **Unpause the simulation** — click Play in Gazebo GUI or run:
+
+```bash
+gz service -s /world/iris_tracking/control \
+  --reqtype gz.msgs.WorldControl \
+  --reptype gz.msgs.Boolean \
+  --timeout 3000 --req 'pause: false'
+```
+
+3. **Run the tracker** (in a new terminal):
+
+```bash
+cd ~/ardu_ws
+source install/setup.bash
+ros2 run ardupilot_gz_application byte_tracker
+```
+
+The node will:
+- Connect to ArduPilot via MAVLink (`udpin:127.0.0.1:14550`)
+- Switch to GUIDED mode, arm, and take off to 8m
+- Open the **ByteTracker** OpenCV window with live detections
+
+### Controls
+
+| Key / Action | Effect |
+|-------------|--------|
+| **Left click** on a bounding box | Select that object as the tracking target (turns green) |
+| **C** | Clear the selected target |
+| **Q** | Quit the tracker |
+
+### Repositioning the Drone
+
+The front camera faces forward, so the drone needs to be positioned near and facing the objects. You can reposition via pymavlink:
+
+```python
+# Example: fly to (10, 3) at 5m altitude and yaw east (90 deg)
+from pymavlink import mavutil
+conn = mavutil.mavlink_connection('udpin:127.0.0.1:14551')
+conn.wait_heartbeat()
+
+# Move to position (NED frame: north, east, down)
+conn.mav.set_position_target_local_ned_send(
+    0, conn.target_system, conn.target_component,
+    mavutil.mavlink.MAV_FRAME_LOCAL_NED,
+    0b0000111111111000,
+    10, 3, -5,  # 10m north, 3m east, 5m up
+    0, 0, 0, 0, 0, 0, 0, 0,
+)
+
+# Yaw to face east
+conn.mav.command_long_send(
+    conn.target_system, conn.target_component,
+    mavutil.mavlink.MAV_CMD_CONDITION_YAW, 0,
+    90, 25, 1, 0, 0, 0, 0,
+)
+```
+
+### Detection Notes
+
+- YOLO11m is trained on real-world COCO data; detection performance on Gazebo's synthetic models varies
+- The Fuel models (Prius, Hatchback, Walking person) are detected more reliably than simple box-geometry models
+- The confidence threshold is set to `0.10` to maximize detections in simulation
+- The bottom of the OpenCV window shows the current detection count and frame number
+
 ## File Structure
 
 ```
@@ -245,6 +331,9 @@ ardu_ws/src/
 │   ├── ardupilot_gz_gazebo/
 │   │   └── worlds/
 │   │       └── iris_tracking.sdf              # Primary world file (used by launch)
+│   ├── ardupilot_gz_application/
+│   │   ├── drone_tracker.py                   # Color-based gimbal tracker
+│   │   └── byte_tracker.py                    # YOLO11m + ByteTrack interactive tracker
 │   └── ardupilot_gz_description/
 │
 ├── ardupilot_gazebo/
