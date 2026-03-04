@@ -278,36 +278,15 @@ The node will:
 
 | Key / Action | Effect |
 |-------------|--------|
+| **W / S** | Fly forward / backward (2.0 m/s) |
+| **A / D** | Yaw left / right (0.5 rad/s) |
+| **R / F** | Ascend / descend (1.0 m/s) |
+| **Space** | Stop all motion (emergency hover) |
 | **Left click** on a bounding box | Select that object as the tracking target (turns green) |
 | **C** | Clear the selected target |
 | **Q** | Quit the tracker |
 
-### Repositioning the Drone
-
-The front camera faces forward, so the drone needs to be positioned near and facing the objects. You can reposition via pymavlink:
-
-```python
-# Example: fly to (10, 3) at 5m altitude and yaw east (90 deg)
-from pymavlink import mavutil
-conn = mavutil.mavlink_connection('udpin:127.0.0.1:14551')
-conn.wait_heartbeat()
-
-# Move to position (NED frame: north, east, down)
-conn.mav.set_position_target_local_ned_send(
-    0, conn.target_system, conn.target_component,
-    mavutil.mavlink.MAV_FRAME_LOCAL_NED,
-    0b0000111111111000,
-    10, 3, -5,  # 10m north, 3m east, 5m up
-    0, 0, 0, 0, 0, 0, 0, 0,
-)
-
-# Yaw to face east
-conn.mav.command_long_send(
-    conn.target_system, conn.target_component,
-    mavutil.mavlink.MAV_CMD_CONDITION_YAW, 0,
-    90, 25, 1, 0, 0, 0, 0,
-)
-```
+The HUD at the bottom of the window shows the current velocity values and a key binding legend.
 
 ### Detection Notes
 
@@ -340,15 +319,22 @@ The target bounding box area is maintained at ~4% of the image. A dead zone of 5
 
 | Key / Action | Effect |
 |-------------|--------|
-| **Left click** on a bounding box | Select target — drone begins centering |
-| **C** | Clear target — drone stops and hovers |
+| **W / S** | Fly forward / backward (2.0 m/s) — only when no target selected |
+| **A / D** | Yaw left / right (0.5 rad/s) — only when no target selected |
+| **R / F** | Ascend / descend (1.0 m/s) — only when no target selected |
+| **Space** | Stop all motion — only when no target selected |
+| **Left click** on a bounding box | Select target — drone begins auto-centering (keyboard disabled) |
+| **C** | Clear target — drone stops and hovers (keyboard re-enabled) |
 | **Q** | Quit (drone stops safely) |
+
+When a target is selected, autonomous steering takes over and keyboard movement is disabled. Press **C** to clear the target and regain manual control.
 
 ### HUD Elements
 
 - White crosshair at image center
 - Green bounding box and line from crosshair to tracked target
 - "TRACKING ID:N" status banner (shows "LOST — holding" if target disappears)
+- Velocity HUD at bottom showing current speed values and key legend
 - Steering telemetry logged to terminal: `ex`, `ey`, `area`, `vx`, `vz`, `yaw_r`
 
 ### Tuning Parameters
@@ -390,9 +376,15 @@ During **CHARGING**, speed scales with how tightly centered the target is — th
 
 | Key / Action | Effect |
 |-------------|--------|
-| **Left click** on a bounding box | Begin pursuit |
-| **C** | Abort pursuit — drone stops and hovers |
+| **W / S** | Fly forward / backward (2.0 m/s) — only in IDLE state |
+| **A / D** | Yaw left / right (0.5 rad/s) — only in IDLE state |
+| **R / F** | Ascend / descend (1.0 m/s) — only in IDLE state |
+| **Space** | Stop all motion — only in IDLE state |
+| **Left click** on a bounding box | Begin pursuit (keyboard disabled during pursuit) |
+| **C** | Abort pursuit — drone stops and hovers (keyboard re-enabled) |
 | **Q** | Quit (drone stops safely) |
+
+Keyboard movement is only active in IDLE state. During CENTERING, CHARGING, or IMPACT, the pursuit autopilot controls the drone. Press **C** to abort and return to IDLE for manual control.
 
 ### HUD Elements
 
@@ -414,13 +406,13 @@ During **CHARGING**, speed scales with how tightly centered the target is — th
 
 ## Tracker Summary
 
-| Node | Command | Behavior |
-|------|---------|----------|
-| `byte_tracker` | `ros2 run ardupilot_gz_application byte_tracker` | Passive — detect and select (no steering) |
-| `active_tracker` | `ros2 run ardupilot_gz_application active_tracker` | Centers target, maintains distance |
-| `pursuit_tracker` | `ros2 run ardupilot_gz_application pursuit_tracker` | Centers then charges until impact |
+| Node | Command | Behavior | Keyboard Control |
+|------|---------|----------|-----------------|
+| `byte_tracker` | `ros2 run ardupilot_gz_application byte_tracker` | Passive — detect and select (no auto-steering) | Always active |
+| `active_tracker` | `ros2 run ardupilot_gz_application active_tracker` | Centers target, maintains distance | Active when no target selected |
+| `pursuit_tracker` | `ros2 run ardupilot_gz_application pursuit_tracker` | Centers then charges until impact | Active in IDLE state only |
 
-All three nodes share the same launch prerequisites (simulation running + unpaused) and mouse/keyboard controls.
+All three nodes share the same launch prerequisites (simulation running + unpaused), mouse controls, and WASD+RF keyboard flight controls.
 
 ## File Structure
 

@@ -1,0 +1,13 @@
+build/
+install/
+log/
+logs/
+*.tlog
+*.tlog.raw
+*.parm
+eeprom.bin
+dumpcore.*
+dumpstack.*
+terrain/
+*.pt
+.claude/
