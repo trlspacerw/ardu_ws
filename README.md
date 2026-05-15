@@ -116,6 +116,56 @@ ros2 launch ardupilot_gz_bringup iris_tracking.launch.py rviz:=true
 mavproxy.py --master udp:127.0.0.1:14550 --console --map
 ```
 
+# Recommended Setup
+
+Use one process as the main MAVLink receiver, then forward to others.
+
+Example:
+
+```bash
+mavproxy.py --master=udp:127.0.0.1:14550 \
+            --out=127.0.0.1:14551 \
+            --console --map
+```
+
+Then in Python:
+
+```python
+vehicle = utility.mavlink_connection('udpin:127.0.0.1:14551')
+```
+
+Flow becomes:
+
+```text
+SITL/Gazebo/ArduPilot
+        |
+      14550
+        |
+    MAVProxy
+        |
+   forwards to 14551
+        |
+   Python script
+```
+
+This is the standard MAVLink routing pattern.
+
+You can even add more outputs:
+
+```bash
+--out=127.0.0.1:14551
+--out=127.0.0.1:14552
+--out=192.168.1.10:14550
+```
+
+for multiple consumers like:
+
+* Python scripts
+* Mission Planner
+* QGroundControl
+* ROS nodes
+
+
 Or connect QGroundControl / Mission Planner to `udp:127.0.0.1:14550`.
 
 ## World Description
