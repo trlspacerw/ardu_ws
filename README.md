@@ -210,15 +210,17 @@ The `iris_tracking.sdf` world contains a 100m x 100m outdoor environment:
 
 ### Drone: `iris_with_front_cam`
 
-The Iris drone model extends `iris_with_gimbal` with an additional fixed front-facing camera:
+The Iris drone model extends `iris_with_gimbal` with two additional fixed cameras:
 
-| Property | Value |
-|----------|-------|
-| Camera resolution | 640 x 480 |
-| FOV | 1.39 rad (~80 deg) |
-| Update rate | 15 Hz |
-| Mount | Fixed to `base_link` facing forward |
-| Clip range | 0.1m to 1000m |
+| Property | Front camera | Down camera |
+|----------|--------------|-------------|
+| Camera resolution | 640 x 480 | 640 x 480 |
+| FOV | 1.39 rad (~80 deg) | 1.39 rad (~80 deg) |
+| Update rate | 15 Hz | 15 Hz |
+| Mount | Fixed to `base_link` facing forward | Fixed to `base_link` facing straight down (belly, pitch +90°) |
+| Clip range | 0.1m to 1000m | 0.1m to 1000m |
+
+> Note: while the drone is on the ground, the down camera shows a gray blur — the lens sits ~8 cm above the grass, inside its 0.1 m near-clip distance. The image becomes useful once airborne.
 
 ### GUI: Picture-in-Picture Camera
 
@@ -236,6 +238,8 @@ The `ros_gz_bridge` exposes the following topics:
 |-------------|------|-------------|
 | `/front_camera/image` | `sensor_msgs/msg/Image` | Front camera RGB image (640x480 @ 15Hz) |
 | `/front_camera/camera_info` | `sensor_msgs/msg/CameraInfo` | Front camera intrinsics |
+| `/down_camera/image` | `sensor_msgs/msg/Image` | Downward camera RGB image (640x480 @ 15Hz) |
+| `/down_camera/camera_info` | `sensor_msgs/msg/CameraInfo` | Downward camera intrinsics |
 | `/gimbal_camera/image` | `sensor_msgs/msg/Image` | Gimbal camera RGB image |
 | `/gimbal_camera/camera_info` | `sensor_msgs/msg/CameraInfo` | Gimbal camera intrinsics |
 
@@ -272,6 +276,9 @@ The `ros_gz_bridge` exposes the following topics:
 ```bash
 # Check front camera is streaming
 ros2 topic hz /front_camera/image
+
+# Check down camera is streaming
+ros2 topic hz /down_camera/image
 
 # List all active topics
 ros2 topic list
@@ -464,6 +471,42 @@ Keyboard movement is only active in IDLE state. During CENTERING, CHARGING, or I
 
 All three nodes share the same launch prerequisites (simulation running + unpaused), mouse controls, and WASD+RF keyboard flight controls.
 
+## Down Camera WebSocket Streaming (`drone_client.py`)
+
+`src/drone_development/drone_client.py` streams the down camera to a remote server alongside MAVLink telemetry. It subscribes to the Gazebo camera topic directly via `gz-transport` (no ROS in the data path):
+
+```
+/world/iris_tracking/model/iris/link/down_camera_link/sensor/down_camera/image
+```
+
+Each frame is JPEG-encoded (quality 70) and sent at 15 fps (~7 KB/frame, ~0.9 Mbps) as a JSON message over a websocket to `{DISCOVERY_URL}/camera/{drone_id}`:
+
+```json
+{
+  "drone_id": "drone001",
+  "camera": "down",
+  "frame": "<base64 JPEG>",
+  "timestamp": 1752403200.0,
+  "width": 640,
+  "height": 480
+}
+```
+
+Telemetry continues on the separate `/stream/{drone_id}` websocket, and the client registers a `"camera"` capability with the discovery server. The server must implement the `/camera/{drone_id}` websocket endpoint (same protocol as `drone_client_latest.py` / `service_discovery.py`).
+
+### Running
+
+```bash
+# 1. Start the simulation
+ros2 launch ardupilot_gz_bringup iris_tracking.launch.py
+
+# 2. Point DISCOVERY_URL / ws_url / camera_ws_url in drone_client.py
+#    at your server (e.g. the ngrok https/wss tunnel), then:
+python3 src/drone_development/drone_client.py drone001
+```
+
+> `drone_client.py` sets `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python` internally — the system `gz.msgs10` Python bindings were generated with an older protoc than the installed protobuf and only load with the pure-python parser. Other scripts importing `gz.msgs10` (e.g. `gazebo_camera_stream.py`, `gazebo_streamer.py`) need that variable exported manually.
+
 ## File Structure
 
 ```
@@ -490,12 +533,16 @@ ardu_ws/src/
 │   ├── worlds/
 │   │   └── iris_tracking.sdf                  # Sync copy of world file
 │   └── models/
-│       ├── iris_with_front_cam/               # Drone model with front camera
+│       ├── iris_with_front_cam/               # Drone model with front + down cameras
 │       │   └── model.sdf
 │       ├── iris_with_gimbal/                  # Base iris gimbal model
 │       ├── military_vehicle/                  # Custom military vehicle
 │       │   └── model.sdf
 │       └── ...                                # Other models (zephyr, runway, etc.)
+│
+├── drone_development/
+│   ├── drone_client.py                        # Telemetry + down camera websocket client
+│   └── ...                                    # MAVLink scripts, streamers, drone-platform
 │
 ├── ardupilot_sitl/                            # SITL launch integration
 ├── micro_ros_agent/                           # DDS agent
